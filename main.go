@@ -46,7 +46,9 @@ func main() {
 	// Set up routes
 	r := mux.NewRouter()
 	r.Use(mimic.LoggingMiddleware)
-	r.Use(mimic.JoseMiddleware)
+	r.Use(func(next http.Handler) http.Handler {
+		return mimic.JoseMiddleware(next, &mdb)
+	})
 
 	r.HandleFunc("/directory", func(w http.ResponseWriter, r *http.Request) {
 		acme.DirectoryHandler(w, r, &cfg)

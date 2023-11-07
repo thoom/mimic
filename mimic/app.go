@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type MimicContext string
@@ -32,12 +33,12 @@ SOFTWARE.`
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add some route logging
-		log.Printf("%s %s %s\n", r.Method, r.RequestURI, r.Header.Get("Content-Type"))
+		log.Printf("%s %s %+v\n", r.Method, r.RequestURI, r.Header)
 		next.ServeHTTP(w, r)
 	})
 }
 
-func JoseMiddleware(next http.Handler) http.Handler {
+func JoseMiddleware(next http.Handler, mdb *MimicDB) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(r.Body)
@@ -49,6 +50,18 @@ func JoseMiddleware(next http.Handler) http.Handler {
 			joseJson.DecodePayload()
 
 			//TODO: validate the JWT
+			if !strings.HasSuffix(joseJson.Jwt.URL, r.URL.String()) {
+				log.Printf("Invalid URL: %s\n", joseJson.Jwt.URL)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
+			if !mdb.ValidateNonce(joseJson.Jwt.Nonce, joseJson.Jwt.URL) {
+				log.Printf("Invalid nonce: %s\n", joseJson.Jwt.Nonce)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
 		}
 
 		ctx := context.WithValue(r.Context(), ContextJose, joseJson)

@@ -13,7 +13,8 @@ func (mdb *MimicDB) CreateSchema() {
 	_, err := mdb.DB.Exec(`CREATE TABLE IF NOT EXISTS nonce (
 		nonce TEXT PRIMARY KEY, 
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
-		used_at DATETIME DEFAULT NULL
+		used_at DATETIME DEFAULT NULL,
+		used_url TEXT DEFAULT NULL
 		) WITHOUT ROWID;
 	`)
 
@@ -31,4 +32,17 @@ func (mdb *MimicDB) CreateNonce() string {
 	mdb.DB.Exec("INSERT INTO nonce (nonce) VALUES (?)", nonce)
 
 	return nonce
+}
+
+func (mdb *MimicDB) ValidateNonce(nonce, url string) bool {
+	var value int
+	row := mdb.DB.QueryRow("SELECT 1 FROM nonce WHERE nonce = ? AND used_at IS NULL", nonce)
+	row.Scan(&value)
+
+	if value == 1 {
+		mdb.DB.Exec("UPDATE nonce SET used_at = datetime('now'), used_url = ? WHERE nonce = ?", url, nonce)
+		return true
+	}
+
+	return false
 }

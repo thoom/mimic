@@ -55,7 +55,7 @@ func GenericHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func AddNonceToResponse(h http.Handler, mdb *mimic.MimicDB) http.Handler {
-	fn := func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(w, r)
 
 		// Only add the nonce header if the request is part of the acme endpoints
@@ -64,7 +64,5 @@ func AddNonceToResponse(h http.Handler, mdb *mimic.MimicDB) http.Handler {
 			w.Header().Set("Replay-Nonce", nonce)
 			w.Header().Set("Cache-Control", "no-store")
 		}
-	}
-
-	return http.HandlerFunc(fn)
+	})
 }
