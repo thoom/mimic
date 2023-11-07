@@ -9,16 +9,15 @@ import (
 	"github.com/valyala/fasttemplate"
 )
 
-func DiscoveryHandler(w http.ResponseWriter, r *http.Request, cfg *mimic.Config) {
+func DirectoryHandler(w http.ResponseWriter, r *http.Request, cfg *mimic.Config) {
 	template := `{
-	"XceUS6czIlw": "https://community.letsencrypt.org/t/adding-random-entries-to-the-directory/33417",
 	"keyChange": "http://{{HOST}}:{{PORT}}/acme/key-change",
 	"meta": {
 		"caaIdentities": [
 		"happy-hacker-ca.invalid"
 		],
 		"termsOfService": "https://{{HOST}}:4431/terms/v7",
-		"website": "https://github.com/letsencrypt/{{HOST}}"
+		"website": "https://github.com/thoom/mimic"
 	},
 	"newAccount": "http://{{HOST}}:{{PORT}}/acme/new-acct",
 	"newNonce": "http://{{HOST}}:{{PORT}}/acme/new-nonce",
