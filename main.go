@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 
 	"github.com/caarlos0/env/v10"
 	_ "github.com/glebarez/go-sqlite"
@@ -34,7 +35,19 @@ func randString(length int) string {
 
 func main() {
 	cfg := mimic.Config{}
-	if err := env.Parse(&cfg); err != nil {
+	options := env.Options{
+		OnSet: func(tag string, value interface{}, isDefault bool) {
+			if tag == "HOST_URL" {
+				cfg.HostURL = value.(string)
+				url, _ := url.Parse(cfg.HostURL)
+				cfg.ParsedHostName.Protocol = url.Scheme
+				cfg.ParsedHostName.Host = url.Hostname()
+				cfg.ParsedHostName.Port = url.Port()
+			}
+		},
+	}
+
+	if err := env.ParseWithOptions(&cfg, options); err != nil {
 		fmt.Printf("%+v\n", err)
 	}
 
@@ -52,7 +65,8 @@ func main() {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
 		used_at DATETIME DEFAULT NULL
 		) WITHOUT ROWID;
-`)
+	`)
+
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,7 +96,7 @@ func main() {
 		}
 	})
 
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), r))
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", cfg.ParsedHostName.Port), r))
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
