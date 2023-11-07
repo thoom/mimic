@@ -1,13 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 
@@ -18,22 +14,8 @@ import (
 	"github.com/thoom/mimic/mimic"
 )
 
-type MimicContext string
-
-const (
-	MimicJose MimicContext = "mimicJose"
-)
-
-func randString(length int) string {
-	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	result := make([]rune, length)
-	for i := range result {
-		result[i] = chars[rand.Intn(len(chars))]
-	}
-	return string(result)
-}
-
 func main() {
+	// Parse environment variables
 	cfg := mimic.Config{}
 	options := env.Options{
 		OnSet: func(tag string, value interface{}, isDefault bool) {
@@ -51,8 +33,6 @@ func main() {
 		fmt.Printf("%+v\n", err)
 	}
 
-	fmt.Printf("%+v\n", cfg)
-
 	// Connect to DB
 	db, err := sql.Open("sqlite", "mimic.db?_journal_mode=WAL")
 	if err != nil {
@@ -60,70 +40,25 @@ func main() {
 	}
 
 	// Create DB schema if it doesn't exist
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS nonce (
-		nonce TEXT PRIMARY KEY, 
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
-		used_at DATETIME DEFAULT NULL
-		) WITHOUT ROWID;
-	`)
+	mdb := mimic.MimicDB{DB: db}
+	mdb.CreateSchema()
 
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Set up routes
 	r := mux.NewRouter()
-	r.Use(loggingMiddleware)
-	r.Use(joseMiddleware)
+	r.Use(mimic.LoggingMiddleware)
+	r.Use(mimic.JoseMiddleware)
 
 	r.HandleFunc("/directory", func(w http.ResponseWriter, r *http.Request) {
 		acme.DirectoryHandler(w, r, &cfg)
 	})
 
-	r.PathPrefix("/acme/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nonce := randString(32)
-		db.Exec("INSERT INTO nonce (nonce) VALUES (?)", nonce)
+	r.HandleFunc("/terms/v1", mimic.TermsHandler).Methods("GET")
 
-		w.Header().Set("Replay-Nonce", nonce)
-		w.Header().Set("Cache-Control", "no-store")
+	r.PathPrefix("/acme/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// no op - will be handled by runsAfter function
 	}).Methods("HEAD")
 
-	r.PathPrefix("/acme/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// no op for now
+	r.PathPrefix("/acme/").HandlerFunc(acme.GenericHandler)
 
-		joseJson := r.Context().Value(MimicJose).(mimic.JoseJson)
-		if joseJson.Payload != "" {
-			log.Printf("%+v\n", joseJson)
-		}
-	})
-
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", cfg.ParsedHostName.Port), r))
-}
-
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add some route logging
-		log.Printf("%s %s %s\n", r.Method, r.RequestURI, r.Header.Get("Content-Type"))
-		next.ServeHTTP(w, r)
-	})
-}
-
-func joseMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(r.Body)
-
-		var joseJson mimic.JoseJson
-		if r.Header.Get("Content-Type") == "application/jose+json" {
-			json.Unmarshal([]byte(buf.Bytes()), &joseJson)
-			joseJson.DecodeProtected()
-			joseJson.DecodePayload()
-
-			//TODO: validate the JWT
-		}
-
-		ctx := context.WithValue(r.Context(), MimicJose, joseJson)
-		r = r.WithContext(ctx)
-
-		next.ServeHTTP(w, r)
-	})
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", cfg.ParsedHostName.Port), acme.AddNonceToResponse(r, &mdb)))
 }
